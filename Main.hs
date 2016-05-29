@@ -24,11 +24,67 @@ evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
     setVar var e
 
 evalStmt :: StateT -> Statement -> StateTransformer Value
-evalStmt env EmptyStmt = return Nil
-evalStmt env (VarDeclStmt []) = return Nil
-evalStmt env (VarDeclStmt (decl:ds)) =
+evalStmt env EmptyStmt                = return Nil
+
+evalStmt env (VarDeclStmt [])         = return Nil
+evalStmt env (VarDeclStmt (decl:ds))  =
     varDecl env decl >> evalStmt env (VarDeclStmt ds)
-evalStmt env (ExprStmt expr) = evalExpr env expr
+
+evalStmt env (ExprStmt expr)          = evalExpr env expr
+
+--inicio da edicao
+
+--Bloco de comandos
+evalStmt env (BlockStmt [])           = return Nil
+evalStmt env (BlockStmt [stmt])       = evalStmt env stmt 
+evalStmt env (BlockStmt (st:stmts))   =
+    evalStmt env st >> evalStmt env (BlockStmt stmts)
+--If simples
+evalStmt env (IfSingleStmt expr stmt) = do
+    x <- evalExpr env expr
+    if (evalBoolean x)
+        then evalStmt env stmt 
+        else return Nil
+--If com else
+evalStmt env (IfStmt expr stmt stmt2) = do
+    x <- evalExpr env expr
+    if (evalBoolean x)
+        then evalStmt env stmt 
+        else evalStmt env stmt2
+--While
+evalStmt env (WhileStmt expr stmt)    = do
+    x <- evalExpr env expr
+    if (evalBoolean x)
+        then evalStmt env stmt >> evalStmt env (WhileStmt expr stmt)
+        else return Nil
+--Do-While
+evalStmt env (DoWhileStmt stmt expr)  = do
+    evalStmt env stmt
+    x <- evalExpr env expr
+    if (evalBoolean x)
+        then evalStmt env (WhileStmt expr stmt)
+        else return Nil
+--For
+evalStmt env (ForStmt init test inc stmt) = do
+    case init of
+        NoInit -> return Nil
+        VarInit vdl -> varDeclList env vdl
+        ExprInit expr -> evalExpr env expr
+    case test of
+        Nothing -> do
+            case inc of
+                Nothing -> evalStmt env stmt >> evalStmt env (ForStmt NoInit test inc stmt)
+                Just incM -> evalStmt env stmt >> evalExpr env incM >> evalStmt env (ForStmt NoInit test inc stmt)
+        Just testM -> do
+            evaluedTest <- evalExpr env testM
+            if (evalBoolean evaluedTest)
+                then case inc of
+                    Nothing -> evalStmt env stmt >> evalStmt env (ForStmt NoInit test inc stmt)
+                    Just incM -> evalStmt env stmt >> evalExpr env incM >> evalStmt env (ForStmt NoInit test inc stmt)
+                else return Nil
+
+evalBoolean :: Value -> Bool
+evalBoolean (Bool b) = b
 
 -- Do not touch this one :)
 evaluate :: StateT -> [Statement] -> StateTransformer Value
@@ -76,6 +132,10 @@ varDecl env (VarDecl (Id id) maybeExpr) = do
         (Just expr) -> do
             val <- evalExpr env expr
             setVar id val
+
+varDeclList :: StateT -> [VarDecl] -> StateTransformer Value
+varDeclList env [] = return Nil
+varDeclList env vdl = foldl1 (>>) $ map (varDecl env) vdl
 
 setVar :: String -> Value -> StateTransformer Value
 setVar var val = ST $ \s -> (val, insert var val s)
