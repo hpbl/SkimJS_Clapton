@@ -1,9 +1,7 @@
-var x = 5, y = 10;
-//x + y;
+var num = 0;
 
-for (var i = 0; i < x; i = i+1) { 
-    y = y + 1;
-    x = x - 1;
+while (num < 3) {
+	num = num + 1;
 }
 
-y;
+num;

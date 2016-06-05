@@ -37,8 +37,12 @@ evalStmt env (ExprStmt expr)          = evalExpr env expr
 --Bloco de comandos
 evalStmt env (BlockStmt [])           = return Nil
 evalStmt env (BlockStmt [stmt])       = evalStmt env stmt 
-evalStmt env (BlockStmt (st:stmts))   =
-    evalStmt env st >> evalStmt env (BlockStmt stmts)
+evalStmt env (BlockStmt (st:stmts))   = evalStmt env st >> evalStmt env (BlockStmt stmts)
+
+--break
+--evalStmt env (BreakStmt id)           = return True 
+
+
 --If simples
 evalStmt env (IfSingleStmt expr stmt) = do
     x <- evalExpr env expr
@@ -57,6 +61,13 @@ evalStmt env (WhileStmt expr stmt)    = do
     if (evalBoolean x)
         then evalStmt env stmt >> evalStmt env (WhileStmt expr stmt)
         else return Nil
+--evalStmt env (WhileStmt expr stmt) = do
+--    x <- evalExpr env expr
+--    if (evalBoolean x)
+--        then if(isBreak (evalStmt env stmt)) 
+--                 then return Nil
+--                 else evalStmt env (WhileStmt expr stmt)
+--        else return Nil
 --Do-While
 evalStmt env (DoWhileStmt stmt expr)  = do
     evalStmt env stmt
@@ -82,9 +93,16 @@ evalStmt env (ForStmt init test inc stmt) = do
                     Nothing -> evalStmt env stmt >> evalStmt env (ForStmt NoInit test inc stmt)
                     Just incM -> evalStmt env stmt >> evalExpr env incM >> evalStmt env (ForStmt NoInit test inc stmt)
                 else return Nil
+--function
+--evalStmt env (FunctionStmt nome args corpo) = do
+--  evalStmt env nome >> evalStmt env args >> evalStmt env corpo
 
 evalBoolean :: Value -> Bool
 evalBoolean (Bool b) = b
+
+--isBreak :: StateTransformer Value -> Bool
+--isBreak (_ Nil) = True
+--isBreak (_ _)  = False
 
 -- Do not touch this one :)
 evaluate :: StateT -> [Statement] -> StateTransformer Value
