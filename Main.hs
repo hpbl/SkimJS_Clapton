@@ -56,10 +56,14 @@ evalStmt env (IfStmt expr stmt stmt2) = do
         then evalStmt env stmt 
         else evalStmt env stmt2
 --While
-evalStmt env (WhileStmt expr stmt)    = do
+evalStmt env (WhileStmt expr stmt) = do
     x <- evalExpr env expr
     if (evalBoolean x)
-        then evalStmt env stmt >> evalStmt env (WhileStmt expr stmt)
+        then do 
+            y <- evalStmt env stmt
+            if(isBreak(y))
+                then return Nil
+                else evalStmt env (WhileStmt expr stmt)
         else return Nil
 --evalStmt env (WhileStmt expr stmt) = do
 --    x <- evalExpr env expr
@@ -103,6 +107,9 @@ evalBoolean (Bool b) = b
 --isBreak :: StateTransformer Value -> Bool
 --isBreak (_ Nil) = True
 --isBreak (_ _)  = False
+isBreak ::Value -> Bool
+isBreak (Nil) = True
+isBreak _ = False
 
 -- Do not touch this one :)
 evaluate :: StateT -> [Statement] -> StateTransformer Value

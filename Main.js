@@ -1,7 +1,7 @@
-var num = 0;
+var x = 1;
 
-while (num < 3) {
-	num = num + 1;
-}
-
-num;
+while (x < 10) {
+	x = x + 1;
+	break;
+} 
+x;
