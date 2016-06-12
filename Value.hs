@@ -1,27 +1,41 @@
 module Value (Value (..)) where
 
+--import Language.ECMAScript3.Syntax.hs
+
+
 data Value = Bool Bool
     | Int Int
     | String String
     | Var String
     | Nil
+    | Break
+    | List [Value] deriving (Eq, Ord)
 
 --
 -- Pretty Printer
 --
 
-instance Show Value where 
-  show (Bool True) = "true"
+instance Show Value where
+  show (List l)     = "[" ++ showLis(List l) ++ "]"
+  show (Break)      = "Break"
+  show (Bool True)  = "true"
   show (Bool False) = "false"
-  show (Int int) = show int
+  show (Int int)    = show int
   show (String str) = "\"" ++ str ++ "\""
-  show (Var name) = name
-  show Nil = "undefined"
-  
+  show (Var name)   = name
+  show Nil          = "undefined"
+
+
+showLis :: Value -> String
+showLis (List [])   = ""
+showLis (List [l])   = show l
+showLis (List (l:ls) ) = show l ++ ", " ++ (showLis (List ls))
+
 -- This function could be replaced by (unwords.map show). The unwords
 -- function takes a list of String values and uses them to build a 
 -- single String where the words are separated by spaces.
+
 showListContents :: [Value] -> String
-showListContents [] = ""
-showListContents [a] = show a
+showListContents []     = ""
+showListContents [a]    = show a
 showListContents (a:as) = show a ++ ", " ++ (showListContents as)
