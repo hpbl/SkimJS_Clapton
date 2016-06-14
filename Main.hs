@@ -1,10 +1,11 @@
 import qualified Language.ECMAScript3.Parser as Parser
 import Language.ECMAScript3.Syntax
-import Control.Monad
-import Control.Applicative
+import Control.Monad hiding (empty)
+import Control.Applicative hiding (empty)
 import Data.Map as Map (Map, insert, lookup, union, toList, empty)
 import Debug.Trace
 import Value
+import Data.Bits
 
 --
 -- Evaluate functions
@@ -20,12 +21,10 @@ evalExpr env (ArrayLit list) = do
     case list of
         [] -> return (List [])
         (x:xs) -> do
-            hd <- evalExpr env x
+            vm <- evalExpr env x
             (List tl) <- evalExpr env (ArrayLit xs)
-            return (List ([hd]++tl))
+            return (List ([vm]++tl))
 
-evalExpr env (FuncExpr (Nothing) args sts) = return $ Function (Id "") args sts;
-evalExpr env (FuncExpr (Just id) args sts) = return $ Function (id) args sts;
 
 evalExpr env (InfixExpr op expr1 expr2) = do
     v1 <- evalExpr env expr1
@@ -35,12 +34,15 @@ evalExpr env (AssignExpr OpAssign (LVar var) expr) = do
     stateLookup env var -- crashes if the variable doesn't exist
     e <- evalExpr env expr
     setVar var e
+
+
+
 evalExpr env (DotRef exp (Id id)) = do
     l <- evalExpr env (exp)
     case l of
         (List (x:xs)) -> do
             case id of
-                "len" -> return (myLength (l) (Int 0))
+                "len" -> (myLength (x:xs) (Int 0))
                 "head" -> return x
                 "tail" -> return (List xs)
         (List []) -> do
@@ -50,118 +52,74 @@ evalExpr env (DotRef exp (Id id)) = do
                 "tail" -> error $ "Lista vazia"
         _ -> do 
             error $ "error"
-evalExpr env (CallExpr dot lista) = do
-    case dot of
-        (DotRef exp (Id id)) -> do
-            l <- evalExpr env (exp)
-            case l of
-                (List l) -> do
-                    case id of
-                        "concat" -> (myConcat env (l) (lista))
-                        "equals" -> (auxEqual env l lista)
-                _ -> do
-                    error $ "error"
-        _ -> return Nil
-evalExpr env (BracketRef exp1 exp2) = do
+evalExpr env (CallExpr (DotRef exp (Id id)) lista) = do
+    l <- evalExpr env (exp)
+    case l of
+        (List (x:xs) ) -> do
+            case id of
+                "concat" -> (myConcat env (x:xs) (lista))
+                "equals" -> (auxEqual env (x:xs) lista)
+                "len" -> (myLength (x:xs) (Int 0))
+                "head" -> return (x)
+                "tail" -> return (List xs)
+        _ -> do
+            error $ "error"
+
+
+evalExpr env (CallExpr name params) = do
+    f <- evalExpr env name
+    case f of
+        Function _ args stmts -> do
+            pushScope env
+            argsF env args params
+            v <- evalStmt env (BlockStmt stmts)
+            popScope env
+            case v of
+                Return r -> return r
+                NilReturn -> return Nil
+        _ -> error $ "error in CallExpr"
+
+-- funcao que acessa uma posicao do array
+evalExpr env (BracketRef exp1 exp2) = do 
     list <- evalExpr env exp1
     (Int idx) <- evalExpr env exp2
     case list of
-        (List l) -> return (l!!idx)
+        (List l) -> return (l!!idx) -- operador que acessa a posicao n
         _ -> error $ "erro"
 
+-- funcao que troca o valor do array
+evalExpr env (AssignExpr op (LBracket lista idx) expr) = do
+    l <- evalExpr env lista
+    idxNew <- evalExpr env idx
+    exprNew <- evalExpr env expr
+    case l of
+        (List list) -> do
+            case op of
+                OpAssign -> do
+                    pos <- auxList list idxNew exprNew
+                    case lista of
+                        VarRef (Id var) -> setVar var pos
+                        _ -> return Nil
+-- funca que auxilia a troca de um valor no array
+auxList :: [Value] -> Value -> Value -> StateTransformer Value
+auxList (x:xs) (Int idx) val = do
+    if(idx == 0) then return (List (val:xs))
+        else do
+            (List list) <- auxList (xs) (Int (idx -1)) (val)
+            return (List (x:list))
 
---evalExpr env (CallExpr exp lista ) = do
---    case exp of
---        (VarRef (Id name)) -> do
---            case name of
---                (Function (Id name) ids exp) -> ST $ \s ->
---                let (ST fL) = local env (exp)
---                    (_, vL) = fL env
---                    (ST fG) = global s
---                    (ST fArgs) = mapM (evalExpr env) exp
---                    (params, _ ) = fArgs s
---                    parametros = fromList (zip (Prelude.map (\(Id a) -> a) ids) (params));
---                    locais = union parametros s
---                    (ST g) = evalStmt env (BlockStmt exp)
---                    (val, finalState) = g local
---                in do
---                    if (isReturn(val))
-                        
-
-
-
-local :: StateT -> Statement -> StateTransformer Value
-local env (BlockStmt []) = return Nil
-local env (VarDeclStmt []) = return Nil
-local env (VarDeclStmt (x:xs)) = do
-    varDecl env x
-    local env (VarDeclStmt xs)
-local env (BlockStmt (st:stmt) ) = do
-    case st of
-        (IfSingleStmt exp stmt1) -> do
-            local env stmt1
-            local env (BlockStmt stmt)
-        (IfStmt exp stmt1 stmt2) -> do
-            local env stmt1
-            local env stmt2
-            local env (BlockStmt stmt)
-        (ForStmt init exp1 exp2 stmt1) -> do
-            local env stmt1
-            local env (BlockStmt stmt)
-        (VarDeclStmt (y:ys)) -> do
-            varDecl env y
-            local env (BlockStmt stmt)
-        (ExprStmt (CallExpr name listExp)) -> do
-            ans <- evalExpr env name
-            case ans of
-                (Function nome arg params) -> do
-                    local env ( BlockStmt params)
-                    local env (BlockStmt stmt)
-                (Empty _) -> local env (BlockStmt stmt)
-        _ -> local env (BlockStmt stmt)
+argsF :: StateT -> [Id] -> [Expression] ->StateTransformer Value
+argsF env [] [] = return Nil
+argsF env ((Id x):xs) (y:ys) = do
+    v <- evalExpr env y
+    localVar x v
+    argsF env xs ys
+argsF env _ _ = error $ "error"            
 
 
-global :: StateT -> Statement -> StateTransformer Value
-global env (BlockStmt []) = return Nil
-global env (BlockStmt ((ExprStmt (AssignExpr OpAssign (LVar var) expr)):xs)) = do
-    x <- stateLookup env var
-    case x of
-        (Empty _) -> do
-            evalStmt env (VarDeclStmt [(VarDecl (Id var) (Nothing))])
-            global env (BlockStmt xs)
-        _ -> global env (BlockStmt xs)
-global env (BlockStmt (st:stmt)) = do
-    case st of
-        (IfSingleStmt expr stmt1) -> do
-            global env stmt1
-            global env (BlockStmt stmt)
-        (IfStmt expr stmt1 stmt2) -> do
-            global env stmt1
-            global env stmt2
-            global env (BlockStmt stmt)
-        (ForStmt ini exp1 exp2 stmt1) -> do
-            case ini of
-                (ExprInit ei) -> do
-                    global env (BlockStmt [ExprStmt ei])
-                    global env stmt1 
-                    global env (BlockStmt stmt)
-                _ -> do
-                    global env stmt1
-                    global env (BlockStmt stmt)
-        (ExprStmt (CallExpr name listExp) ) -> do
-            ans <- evalExpr env name
-            case ans of
-                (Function nome (arg) params ) -> do
-                    global env (BlockStmt params)
-                    global env (BlockStmt stmt)
-                (Empty _) -> local env (BlockStmt stmt)
-        _ -> local env (BlockStmt stmt)
-global env _ = return Nil
-
-
-myLength :: Value -> Value -> Value
-myLength (List []) (Int num) = (Int num)
-myLength  (List (l:ls)) (Int num) = myLength  (List ls) (Int (num + 1) )
+myLength :: [Value] -> Value -> StateTransformer Value
+myLength ([]) (Int num) = return (Int num)
+myLength  ((l:ls)) (Int num) = myLength  (ls) (Int (num + 1))
 
 
 myConcat :: StateT ->[Value]-> [Expression] -> StateTransformer Value
@@ -171,7 +129,6 @@ myConcat env (list) (x:xs) = do
                 case vm of
                     (List e) -> myConcat env (list ++ e) (xs)
                     x -> myConcat env (list ++ [x]) xs
-
 
 auxEqual :: StateT -> [Value] -> [Expression] -> StateTransformer Value
 auxEqual env (list) ([]) = return (Bool True)
@@ -199,22 +156,22 @@ evalStmt env (ExprStmt expr)          = evalExpr env expr
 
 --Bloco de comandos
 evalStmt env (BlockStmt [])           = return Nil
---evalStmt env (BlockStmt ((BreakStmt st):stmts)) = return Break
---evalStmt env (BlockStmt [stmt])       = evalStmt env stmt
 evalStmt env (BlockStmt (st:stmts))   = do
     evaluedStmt <- evalStmt env st
     case evaluedStmt of
         Break -> return Break
+        Return r -> return (Return r)
+        NilReturn -> return NilReturn
         _ -> evalStmt env (BlockStmt stmts)
 
-evalStmt env (BreakStmt st) = return Break
 
-
+evalStmt env (BreakStmt m) = return Break
 --If simples
 evalStmt env (IfSingleStmt expr stmt) = do
     x <- evalExpr env expr
     if (evalBoolean x)
-        then evalStmt env stmt
+        then
+            evalStmt env stmt
         else return Nil
 
 
@@ -222,8 +179,11 @@ evalStmt env (IfSingleStmt expr stmt) = do
 evalStmt env (IfStmt expr stmt stmt2) = do
     x <- evalExpr env expr
     if (evalBoolean x)
-        then evalStmt env stmt
-        else evalStmt env stmt2
+        then
+            evalStmt env stmt  
+        else
+            evalStmt env stmt2
+        
 
 
 --While
@@ -259,12 +219,15 @@ evalStmt env (ForStmt init test inc stmt) = do
                 Nothing -> do 
                     evaluedStmt <- evalStmt env stmt
                     if(isBreak evaluedStmt)
-                        then return Nil                
+                        then do 
+                            --popScope env
+                            return Nil                
                         else evalStmt env (ForStmt NoInit test inc stmt)
                 Just incM -> do
                     evaluedStmt <- evalStmt env stmt
                     if(isBreak evaluedStmt)
-                        then return Nil
+                        then do
+                            return Nil
                         else evalExpr env incM >> evalStmt env (ForStmt NoInit test inc stmt)
         Just testM -> do
             evaluedTest <- evalExpr env testM
@@ -273,14 +236,30 @@ evalStmt env (ForStmt init test inc stmt) = do
                     Nothing -> do
                         evaluedStmt <- evalStmt env stmt
                         if(isBreak evaluedStmt)
-                            then return Nil
+                            then do
+                                return Nil
                             else evalStmt env (ForStmt NoInit test inc stmt)
-                    Just incM -> do 
+                    Just incM -> do
                         evaluedStmt <- evalStmt env stmt
                         if(isBreak evaluedStmt)
-                            then return Nil
+                            then do
+                                return Nil
                             else evalExpr env incM >> evalStmt env (ForStmt NoInit test inc stmt)
                 else return Nil
+
+
+
+
+
+
+evalStmt env (FunctionStmt (Id name) args stmts) = globalVar name (Function (Id name) args stmts)
+
+evalStmt env (ReturnStmt mexpr) =
+    case mexpr of
+        Nothing -> return NilReturn
+        Just val -> do
+            v <- evalExpr env val
+            return (Return v)
 
 
 evalBoolean :: Value -> Bool
@@ -329,36 +308,75 @@ infixOp env OpLOr  (Bool v1) (Bool v2) = return $ Bool $ v1 || v2
 -- Environment and auxiliary functions
 --
 
-environment :: Map String Value
-environment = Map.empty
+environment :: [Map String Value]
+environment = [empty]
+
+
+localVar :: String -> Value -> StateTransformer Value
+localVar var val = ST $ \s -> (val, (insert var val (head s)):(tail s))
+
+globalVar :: String -> Value -> StateTransformer Value
+globalVar var val = ST $ \s -> (val, globalVar2 var val s)
+
+globalVar2 :: String -> Value -> StateT -> StateT
+globalVar2 var val state = 
+    if null (tail state) 
+        then (insert var val (head state)):[]
+        else (head state): (globalVar2 var val (tail state))
+
+
+
+
 
 stateLookup :: StateT -> String -> StateTransformer Value
 stateLookup env var = ST $ \s ->
     -- this way the error won't be skipped by lazy evaluation
-    case Map.lookup var (union s env) of
-        Nothing -> error $ "Variable " ++ show var ++ " not defiend."
+    case scopeLookup s var of
+        Nothing -> (Global, s)
         Just val -> (val, s)
+
+
+scopeLookup :: [Map String Value]->String -> Maybe Value
+scopeLookup [] _ = Nothing
+scopeLookup (s:scopes) var = 
+    case Map.lookup var s of
+        Nothing -> scopeLookup scopes var
+        Just val -> Just val
+
 
 varDecl :: StateT -> VarDecl -> StateTransformer Value
 varDecl env (VarDecl (Id id) maybeExpr) = do
     case maybeExpr of
-        Nothing -> setVar id Nil
+        Nothing -> localVar id Nil
         (Just expr) -> do
             val <- evalExpr env expr
-            setVar id val
+            localVar id val
+
 
 varDeclList :: StateT -> [VarDecl] -> StateTransformer Value
 varDeclList env [] = return Nil
 varDeclList env vdl = foldl1 (>>) $ map (varDecl env) vdl
 
 setVar :: String -> Value -> StateTransformer Value
-setVar var val = ST $ \s -> (val, insert var val s)
+setVar var val = ST $ \s -> (val, updateVar var val s)
 
+updateVar :: String -> Value -> StateT -> StateT 
+updateVar _ _ [] = error $ "uu"
+updateVar var val (st:stmt) = case (Map.lookup var st) of
+        Nothing -> st:(updateVar var val stmt)
+        Just v -> (insert var val st):stmt
+
+
+pushScope :: StateT -> StateTransformer Value
+pushScope env = ST $ \s -> (Nil, empty:s)
+
+popScope::StateT->StateTransformer Value
+popScope env = ST $ \s -> (Nil, (tail s))
 --
 -- Types and boilerplate
 --
 
-type StateT = Map String Value
+type StateT = [Map String Value]
 data StateTransformer t = ST (StateT -> (t, StateT))
 
 instance Monad StateTransformer where
@@ -381,10 +399,10 @@ instance Applicative StateTransformer where
 
 showResult :: (Value, StateT) -> String
 showResult (val, defs) =
-    show val ++ "\n" ++ show (toList $ union defs environment) ++ "\n"
+    show val ++ "\n" ++ show (toList $ union (head defs) (head environment)) ++ "\n" ++ showResult (val, tail(defs))
 
 getResult :: StateTransformer Value -> (Value, StateT)
-getResult (ST f) = f Map.empty
+getResult (ST f) = f [empty]
 
 main :: IO ()
 main = do

@@ -13,7 +13,8 @@ data Value = Bool Bool
     | Break
     | Empty Value
     | Return Value
-    | Global (Map String Value)
+    | NilReturn
+    | Global
     | List [Value] deriving (Eq, Ord)
 
 --
@@ -25,11 +26,16 @@ instance Show Value where
   show (Break)      = "Break"
   show (Bool True)  = "true"
   show (Bool False) = "false"
+  show (Function (Id name) args stmts) = "function " ++ name ++ "(" ++ showArgs args ++")"
   show (Int int)    = show int
   show (String str) = "\"" ++ str ++ "\""
   show (Var name)   = name
   show Nil          = "undefined"
 
+showArgs [] = ""
+showArgs ((Id arg):xs) = show arg ++ showCommaArgs xs
+showCommaArgs [] = ""
+showCommaArgs ((Id arg):xs) = ", " ++ show arg ++ showCommaArgs xs
 
 showLis :: Value -> String
 showLis (List [])   = ""
