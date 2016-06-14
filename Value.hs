@@ -1,14 +1,19 @@
 module Value (Value (..)) where
 
---import Language.ECMAScript3.Syntax.hs
+import Language.ECMAScript3.Syntax
 
+import Data.Map as Map (Map, insert, lookup, union, toList, empty)
 
 data Value = Bool Bool
     | Int Int
     | String String
     | Var String
     | Nil
+    | Function Id [Id] [Statement]
     | Break
+    | Empty Value
+    | Return Value
+    | Global (Map String Value)
     | List [Value] deriving (Eq, Ord)
 
 --

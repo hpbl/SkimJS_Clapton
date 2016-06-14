@@ -152,9 +152,9 @@ data Expression
   | DotRef Expression Id -- ^ @foo.bar@, spec 11.2.1
   | BracketRef Expression {- container -} Expression {- key -} 
     -- ^ @foo[bar@, spec 11.2.1
-  | NewExpr Expression {- constructor -} [Expression] 
+  | NewExpr Expression {- constructor -} [Expression]
     -- ^ @new foo(bar)@, spec 11.2.2
-  | PrefixExpr PrefixOp Expression 
+  | PrefixExpr PrefixOp Expression
     -- ^ @\@e@, spec 11.4 (excluding 11.4.4, 111.4.5)
   | UnaryAssignExpr UnaryAssignOp LValue 
     -- ^ @++x@, @x--@ etc., spec 11.3, 11.4.4, 11.4.5

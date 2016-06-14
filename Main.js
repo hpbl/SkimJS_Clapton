@@ -1,3 +1,2 @@
-var list = [1,2,3, 2,3];
-var list2 = [1,2,3];
-list.equal(list2);
+var list = [1,2,3,4,5];
+list[2];
